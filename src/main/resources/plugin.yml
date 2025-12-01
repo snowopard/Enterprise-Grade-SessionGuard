@@ -1,10 +1,10 @@
 name: SessionGuard
 version: '2.0.0'
-main: com.yourcompany.sessionguard.SessionGuard
+main: com.hyping.sessionguard.SessionGuard
 api-version: '1.20'
 description: Professional session management for Folia
 author: YourName
-website: https://yourcompany.com
+website: https://hyping.com
 folia-supported: true
 
 commands:
