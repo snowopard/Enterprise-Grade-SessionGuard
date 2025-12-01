@@ -1,0 +1,26 @@
+name: SessionGuard
+version: '2.0.0'
+main: com.yourcompany.sessionguard.SessionGuard
+api-version: '1.20'
+description: Professional session management for Folia
+author: YourName
+website: https://yourcompany.com
+folia-supported: true
+
+commands:
+  sessionguard:
+    description: Main SessionGuard command
+    usage: /sessionguard <reload|stats|list|kick|help>
+    aliases: [sg]
+    permission: sessionguard.use
+
+permissions:
+  sessionguard.use:
+    description: Allows basic command usage
+    default: true
+  sessionguard.admin:
+    description: Allows all admin commands
+    default: op
+  sessionguard.bypass:
+    description: Bypasses session checks
+    default: op

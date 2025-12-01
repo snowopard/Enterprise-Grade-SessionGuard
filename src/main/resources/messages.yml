@@ -1,0 +1,14 @@
+# SessionGuard Messages
+
+# Kick messages
+kick:
+  duplicate: "&cYou were disconnected because you logged in from another location!"
+  admin: "&cYour session was terminated by an administrator."
+
+# Player messages
+player:
+  welcome: "&aWelcome! Your session is now secure."
+
+# Error messages
+error:
+  connection-failed: "&cFailed to establish connection. Please try again."
