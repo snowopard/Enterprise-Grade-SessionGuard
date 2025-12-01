@@ -2,36 +2,31 @@
 
 # Reconnection settings
 reconnection:
-  # Reconnection delay in seconds (default: 2)
-  delay: 2
-  # Enable/disable reconnection feature
+  delay: 2  # Reconnection delay in seconds
   enabled: true
 
 # Session settings
 session:
-  # Session timeout in minutes (0 = never timeout)
   timeout-minutes: 30
-  # Maximum sessions per IP (0 = unlimited)
-  max-per-ip: 3
-  # Automatically remove session on quit
   remove-on-quit: false
 
 # Detection settings
 detection:
-  # Check by username if UUID not found
   check-username: true
-  # Check IP addresses
-  check-ip: true
-  # Allow multiple connections from same IP
-  allow-same-ip: false
+  check-ip: false
 
-# Logging settings
+# Logging
 logging:
-  # Enable/disable logging
   enabled: true
-  # Log duplicate detections
   duplicates: true
-  # Log kicks
   kicks: true
-  # Log reconnections
   reconnections: true
+
+# Kick messages
+kick:
+  duplicate: "&cYou were disconnected because you logged in from another location!"
+  admin: "&cYour session was terminated by an administrator."
+
+# Player messages
+player:
+  welcome: "&aWelcome! Your session is now secure."

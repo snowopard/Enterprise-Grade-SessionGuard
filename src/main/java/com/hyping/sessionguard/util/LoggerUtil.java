@@ -4,7 +4,6 @@ import com.hyping.sessionguard.SessionGuard;
 import org.bukkit.Bukkit;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class LoggerUtil {
@@ -87,12 +86,5 @@ public class LoggerUtil {
         if (plugin == null) return true;
         return plugin.getConfig().getBoolean("logging.enabled", true) &&
                plugin.getConfig().getBoolean("logging." + type, true);
-    }
-    
-    public static void logPerformance(@NotNull String operation, long startTime) {
-        long duration = System.currentTimeMillis() - startTime;
-        if (duration > 100 && isDebugEnabled()) { // Log if operation took >100ms
-            warning(String.format("Performance warning: %s took %dms", operation, duration));
-        }
     }
 }

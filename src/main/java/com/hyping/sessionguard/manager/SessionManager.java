@@ -2,220 +2,218 @@ package com.hyping.sessionguard.manager;
 
 import com.hyping.sessionguard.SessionGuard;
 import com.hyping.sessionguard.api.SessionGuardAPI;
-import com.hyping.sessionguard.api.event.SessionDuplicateEvent;
 import com.hyping.sessionguard.api.event.SessionKickEvent;
-import com.hyping.sessionguard.api.event.SessionReconnectEvent;
-import com.hyping.sessionguard.config.messages.MessageManager;
 import com.hyping.sessionguard.storage.SessionStorage;
-import io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler;
+import com.hyping.sessionguard.storage.impl.MemoryStorage;
+import com.hyping.sessionguard.util.ComponentUtil;
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class SessionManager implements SessionGuardAPI {
-    
+
     private final SessionGuard plugin;
     private final SessionStorage storage;
-    private final KickManager kickManager;
-    private final CacheManager cacheManager;
-    private final ReconnectionManager reconnectionManager;
+    private final Map<UUID, Long> recentlyKicked;
+    private final Map<UUID, Boolean> processingKicks;
     private ScheduledTask cleanupTask;
-    
-    public SessionManager(@NotNull SessionGuard plugin, @NotNull SessionStorage storage) {
+
+    public SessionManager(SessionGuard plugin) {
         this.plugin = plugin;
-        this.storage = storage;
-        this.kickManager = new KickManager(plugin);
-        this.cacheManager = new CacheManager();
-        this.reconnectionManager = new ReconnectionManager(plugin);
+        this.storage = new MemoryStorage();
+        this.storage.initialize();
+        this.recentlyKicked = new ConcurrentHashMap<>();
+        this.processingKicks = new ConcurrentHashMap<>();
     }
-    
+
     public void startCleanupTask() {
         cleanupTask = Bukkit.getGlobalRegionScheduler()
-            .runAtFixedRate(plugin, task -> {
-                cleanupExpiredData();
-            }, 100L, 20L * 10L); // Every 10 seconds
+                .runAtFixedRate(plugin, task -> {
+                    cleanupExpiredData();
+                }, 100L, 20L * 10L);
     }
-    
+
     private void cleanupExpiredData() {
         long currentTime = System.currentTimeMillis();
         long reconnectDelay = plugin.getConfig().getLong("reconnection.delay", 2L) * 1000L;
-        
+
         // Clean recently kicked players
-        recentlyKicked.entrySet().removeIf(entry -> 
-            currentTime - entry.getValue() > reconnectDelay);
-        
+        recentlyKicked.entrySet().removeIf(entry ->
+                currentTime - entry.getValue() > reconnectDelay);
+
         // Clean processing kicks
         processingKicks.clear();
-        
+
         // Clean storage
         storage.cleanupExpiredSessions(TimeUnit.MINUTES.toMillis(
-            plugin.getConfig().getLong("session.timeout-minutes", 30L)
+                plugin.getConfig().getLong("session.timeout-minutes", 30L)
         ));
     }
-    
+
     @Override
-    public boolean hasActiveSession(@NotNull UUID playerId) {
+    public boolean hasActiveSession(UUID playerId) {
         return storage.hasActiveSession(playerId);
     }
-    
+
     @Override
-    public @Nullable SessionData getSessionData(@NotNull UUID playerId) {
-        return storage.getSessionData(playerId);
-    }
-    
-    @Override
-    public @NotNull CompletableFuture<Boolean> handleDuplicateLogin(
-            @NotNull UUID playerId, 
-            @NotNull String username) {
-        
+    public CompletableFuture<Boolean> handleDuplicateLogin(UUID playerId, String username) {
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        
-        // Check reconnection window using reconnectionManager
-        if (reconnectionManager.canReconnect(playerId)) {
+
+        // Check if already processing
+        if (processingKicks.containsKey(playerId)) {
             future.complete(false);
             return future;
         }
-        
+
         // Check reconnection window
         Long kickTime = recentlyKicked.get(playerId);
         long reconnectDelay = plugin.getConfig().getLong("reconnection.delay", 2L) * 1000L;
-        
+
         if (kickTime != null && System.currentTimeMillis() - kickTime < reconnectDelay) {
             recentlyKicked.remove(playerId);
-            Bukkit.getPluginManager().callEvent(new SessionReconnectEvent(playerId, username));
             future.complete(true);
             return future;
         }
-        
-        // Fire duplicate event
-        SessionDuplicateEvent event = new SessionDuplicateEvent(playerId, username);
-        Bukkit.getPluginManager().callEvent(event);
-        
-        if (event.isCancelled()) {
-            future.complete(true);
-            return future;
-        }
-        
-        // Find existing player
-        Player existingPlayer = Bukkit.getPlayer(playerId);
-        if (existingPlayer == null && plugin.getConfig().getBoolean("detection.check-username", true)) {
-            existingPlayer = Bukkit.getPlayerExact(username);
-        }
-        
+
+        // Find existing player - fix: make variables effectively final
+        final Player existingPlayer = findExistingPlayer(playerId, username);
+
         if (existingPlayer == null || !existingPlayer.isOnline()) {
             future.complete(true);
             return future;
         }
-        
+
         // Mark as processing
-        processingKicks.add(playerId);
-        
-        // Get kick message
-        MessageManager.Messages kickMessageType = MessageManager.Messages.KICK_DUPLICATE;
-        Component kickMessage = plugin.getConfigurationManager()
-            .getMessageManager()
-            .get(kickMessageType);
-        
+        processingKicks.put(playerId, true);
+
+        // Get kick message - make it effectively final
+        final String kickMessageStr = plugin.getConfig().getString("kick.duplicate",
+                "&cYou logged in from another location!");
+        final Component kickMessage = ComponentUtil.parseLegacy(kickMessageStr);
+        final String existingPlayerName = existingPlayer.getName(); // Capture as final
+
+        // Create atomic reference for future completion
+        final AtomicBoolean operationCompleted = new AtomicBoolean(false);
+
         // Perform kick
-        kickManager.kickPlayer(existingPlayer, kickMessage, "DUPLICATE_LOGIN")
-            .thenAccept(success -> {
-                processingKicks.remove(playerId);
-                
-                if (success) {
-                    recentlyKicked.put(playerId, System.currentTimeMillis());
-                    Bukkit.getPluginManager().callEvent(
+        existingPlayer.getScheduler().run(plugin, task -> {
+            try {
+                existingPlayer.kick(kickMessage);
+                recentlyKicked.put(playerId, System.currentTimeMillis());
+
+                // Fire kick event
+                Bukkit.getPluginManager().callEvent(
                         new SessionKickEvent(playerId, username, "DUPLICATE_LOGIN")
-                    );
-                    
-                    plugin.getLogger().info("Kicked " + existingPlayer.getName() + 
+                );
+
+                plugin.getLogger().info("Kicked " + existingPlayerName +
                         " for duplicate login by " + username);
-                    
-                    future.complete(true);
-                } else {
-                    future.complete(false);
-                }
-            })
-            .exceptionally(throwable -> {
-                processingKicks.remove(playerId);
-                plugin.getLogger().severe("Failed to kick player: " + throwable.getMessage());
+
+                future.complete(true);
+                operationCompleted.set(true);
+            } catch (Exception e) {
+                plugin.getLogger().severe("Failed to kick player: " + e.getMessage());
                 future.complete(false);
-                return null;
-            });
-        
+            } finally {
+                if (operationCompleted.get()) {
+                    processingKicks.remove(playerId);
+                }
+            }
+        }, null);
+
         return future;
     }
-    
-    @Override
-    public @NotNull CompletableFuture<Boolean> kickSession(@NotNull Player player, @NotNull String reason) {
-        Component kickMessage = plugin.getConfigurationManager()
-            .getMessageManager()
-            .get(MessageManager.Messages.KICK_ADMIN);
-        
-        return kickManager.kickPlayer(player, kickMessage, reason);
+
+    private Player findExistingPlayer(UUID playerId, String username) {
+        Player existingPlayer = Bukkit.getPlayer(playerId);
+        if (existingPlayer == null && plugin.getConfig().getBoolean("detection.check-username", true)) {
+            existingPlayer = Bukkit.getPlayerExact(username);
+        }
+        return existingPlayer;
     }
-    
-    public void createSession(@NotNull Player player) {
+
+    @Override
+    public CompletableFuture<Boolean> kickSession(Player player, String reason) {
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+
+        // Make variables effectively final
+        final String kickMessageStr = plugin.getConfig().getString("kick.admin",
+                "&cYour session was terminated by an administrator.");
+        final Component kickMessage = ComponentUtil.parseLegacy(kickMessageStr);
+        final UUID playerId = player.getUniqueId();
+        final String playerName = player.getName(); // Capture as final
+
+        player.getScheduler().run(plugin, task -> {
+            try {
+                player.kick(kickMessage);
+                removeSession(playerId);
+                plugin.getLogger().info("Kicked player " + playerName + " for reason: " + reason);
+                future.complete(true);
+            } catch (Exception e) {
+                plugin.getLogger().severe("Failed to kick player: " + e.getMessage());
+                future.complete(false);
+            }
+        }, null);
+
+        return future;
+    }
+
+    public void createSession(Player player) {
         UUID playerId = player.getUniqueId();
         String username = player.getName();
-        long loginTime = System.currentTimeMillis();
-        
-        SessionData sessionData = new SessionData() {
+        long currentTime = System.currentTimeMillis();
+
+        SessionGuardAPI.SessionData sessionData = new SessionGuardAPI.SessionData() {
             @Override
-            public @NotNull UUID getPlayerId() {
+            public UUID getPlayerId() {
                 return playerId;
             }
-            
+
             @Override
-            public @NotNull String getUsername() {
+            public String getUsername() {
                 return username;
             }
-            
+
             @Override
             public long getLoginTime() {
-                return loginTime;
+                return currentTime;
             }
-            
+
             @Override
             public long getLastActivity() {
-                return loginTime;
+                return currentTime;
             }
         };
-        
+
         storage.saveSession(sessionData);
-        recentlyKicked.remove(playerId); // Clear from kicked list
+        recentlyKicked.remove(playerId);
     }
-    
-    public void updateActivity(@NotNull UUID playerId) {
+
+    public void updateActivity(UUID playerId) {
         storage.updateActivity(playerId);
     }
-    
-    public void removeSession(@NotNull UUID playerId) {
+
+    public void removeSession(UUID playerId) {
         storage.removeSession(playerId);
     }
-    
+
     @Override
     public int getActiveSessionCount() {
         return storage.getSessionCount();
     }
-    
-    public List<String> getAllActiveSessions() {
-        List<String> sessions = new ArrayList<>();
-        // This would be implemented based on storage backend
-        return sessions;
-    }
-    
+
     public void shutdown() {
         if (cleanupTask != null) {
             cleanupTask.cancel();
         }
-        kickManager.shutdown();
+        storage.shutdown();
     }
 }
