@@ -78,7 +78,7 @@ public class YamlStorage implements SessionStorage {
             }
             
             LoggerUtil.info("Loaded " + cache.size() + " sessions from YAML storage");
-            LoggerUtil.logPerformance("YamlStorage.loadFromFile", startTime);
+            //LoggerUtil.logPerformance("YamlStorage.loadFromFile", startTime);
             
         } catch (IOException e) {
             LoggerUtil.error("Failed to load sessions from YAML", e);
@@ -106,7 +106,7 @@ public class YamlStorage implements SessionStorage {
             }
             
             dataConfig.save(dataFile);
-            LoggerUtil.logPerformance("YamlStorage.saveToFile", startTime);
+            //LoggerUtil.logPerformance("YamlStorage.saveToFile", startTime);
             
         } catch (IOException e) {
             LoggerUtil.error("Failed to save sessions to YAML", e);

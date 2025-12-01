@@ -6,13 +6,13 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 
 public class PlayerActivityListener implements Listener {
-    
+
     private final SessionManager sessionManager;
-    
-    public PlayerActivityListener(@NotNull SessionManager sessionManager) {
+
+    public PlayerActivityListener(SessionManager sessionManager) {
         this.sessionManager = sessionManager;
     }
-    
+
     @EventHandler
     public void onPlayerMove(PlayerMoveEvent event) {
         sessionManager.updateActivity(event.getPlayer().getUniqueId());

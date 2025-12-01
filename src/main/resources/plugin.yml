@@ -10,7 +10,7 @@ folia-supported: true
 commands:
   sessionguard:
     description: Main SessionGuard command
-    usage: /sessionguard <reload|stats|list|kick|help>
+    usage: /sessionguard <reload|stats|kick|help>
     aliases: [sg]
     permission: sessionguard.use
 
